@@ -1,11 +1,13 @@
+# OpenUSD Development Certification Overview
+
 OpenUSD is Pixar’s open-source Universal Scene Description framework for collaborative, scalable 3D scene description and interchange. It composes data from layers at read time without duplication.
 
 ### Module 1: Setting the Stage
-A UsdStage is the entry point. It represents your fully composed scene. Create or open one with Usd.Stage.CreateNew or Usd.Stage.Open. The stage manages the scenegraph.
+A UsdStage is the entry point. It represents your fully composed scene. Create or open one with `Usd.Stage.CreateNew` or `Usd.Stage.Open`. The stage manages the scenegraph.
 
-The scenegraph is a hierarchical tree of prims. A prim (UsdPrim) is the core container. It lives at a path such as /World/Asset/Geom/Mesh. Prims contain other prims and properties. Traverse with GetChildren or GetAllDescendants.
+The scenegraph is a hierarchical tree of prims. A prim (UsdPrim) is the core container. It lives at a path such as `/World/Asset/Geom/Mesh`. Prims contain other prims and properties. Traverse with `GetChildren` or `GetAllDescendants`.
 
-Attributes are named, strongly typed properties on prims. Examples include radius (float) on a sphere or points (VtArrayVec3f) on a mesh. They support timeSamples for animation. Set values with Set or SetTimeSample. Relationships point to other prims or properties, such as material bindings.
+Attributes are named, strongly typed properties on prims. Examples include radius (float) on a sphere or points (VtArrayVec3f) on a mesh. They support `timeSamples` for animation. Set values with `Set` or `SetTimeSample`. Relationships point to other prims or properties, such as material bindings.
 
 Core principle: USD describes data only. No runtime execution. Composition assembles the final view. Metadata lives on prims, layers, and stages for extra info like documentation or asset identifiers.
 
@@ -105,6 +107,237 @@ Key terms to internalize: prim, attribute, relationship, primvar, layer stack, c
 
 Resources: openusd.org documentation and tutorials, NVIDIA Learn OpenUSD (free, matches your modules exactly), GitHub examples, usdview, and Python/C++ API docs. Practice until you can predict composition results quickly.
 
-You now possess a solid, exam-focused understanding of the full course. Review weak sections, especially composition scenarios. Practice actively. You are prepared to pass the NCP-OpenUSD Development certification.
+---
+
+# Module 1: Setting the Stage
+
+Welcome to the deep dive on Module 1: Setting the Stage. This foundational module builds your core vocabulary for OpenUSD. Master stages, scenegraphs, prim hierarchies, and attributes now, and every later topic—composition, instancing, pipelines—becomes clearer and easier. We move slowly, explain precisely, and include practical Python examples you can run. Pause after each section to type the code or visualize the hierarchy.
+
+### What Is a Stage?
+A UsdStage is the top-level container and the composed view of your 3D scene. It presents the scenegraph—the dynamic hierarchy of objects assembled from one or more layers according to USD’s composition rules.
+
+Think of the stage as the live, resolved result you see in usdview or your DCC. The underlying data lives in layers (files or in-memory). The stage composes them on demand. This design enables non-destructive editing, modularity, and massive scalability because changes in one layer affect the composed result without copying data.
+
+Every stage has a root layer—the anchor file or layer you opened or created. The stage owns and presents composed prims. You can have multiple stages open at once; each maintains its own composed scenegraph while sharing underlying layer data where possible.
+
+**Why it matters**: In production you rarely work with a single file. A stage lets you aggregate geometry, materials, lights, animation, and environment from many reusable assets. It supports collaborative pipelines where different teams edit different layers.
+
+### Creating and Working with Stages (Python)
+Import the core module:
+
+```python
+from pxr import Usd, Sdf
+```
+
+**Create a new stage on disk** (becomes the root layer):
+
+```python
+stage: Usd.Stage = Usd.Stage.CreateNew("_assets/my_scene.usda")
+print(stage.ExportToString(addSourceFileComment=False))
+```
+
+This produces an empty `#usda 1.0` file.
+
+**Open an existing stage**:
+
+```python
+stage: Usd.Stage = Usd.Stage.Open("_assets/my_scene.usda")
+```
+
+**Create entirely in memory** (great for tests or procedural work):
+
+```python
+stage: Usd.Stage = Usd.Stage.CreateInMemory()
+stage.DefinePrim("/World", "Xform")
+print(stage.ExportToString())
+stage.Export("_assets/exported.usda")  # write to disk later
+```
+
+**Save changes**:
+
+```python
+stage.Save()  # writes edits back to the root layer and any edited sublayers
+```
+
+**Access the root layer**:
+
+```python
+root_layer: Sdf.Layer = stage.GetRootLayer()
+print(root_layer.identifier)
+root_layer.subLayerPaths.append("./extra.usdc")  # add sublayers
+```
+
+Common pattern: CreateNew for new work, Open for existing assets, CreateInMemory for temporary or generated data, then Export when ready.
+
+**Exam tip**: Know the difference between CreateNew, Open, CreateInMemory, and when to call Save vs Export. Expect questions on root layer behavior.
+
+### The Scenegraph and Prim Hierarchies
+The scenegraph is the tree of prims presented by the stage. It is the composed result of all contributing layers and arcs.
+
+Prims are the nodes. They organize everything: geometry, materials, lights, transforms (Xform), cameras, custom data, or pure organizational containers.
+
+Hierarchy uses forward-slash paths, exactly like a filesystem:
+
+- `/World`
+- `/World/Environment`
+- `/World/Environment/Ground`
+- `/World/Characters/Hero/Mesh`
+
+The root prim is usually an Xform or Scope at `/World` or similar. Child prims inherit transforms from parents unless they override.
+
+You traverse the hierarchy with:
+
+- `stage.GetPrimAtPath("/World")`
+- `prim.GetChildren()`
+- `prim.GetAllChildren()` or filtered traversal with predicates
+
+Prims can be valid or invalid (expired or not found). Always check `prim.IsValid()` or `prim` in boolean context.
+
+**Why hierarchy matters**: Clear naming and structure enable efficient traversal, instancing, collections, and overrides. Poor hierarchy leads to hard-to-debug composition and performance issues later.
+
+### Prims in Depth (UsdPrim)
+A prim is the fundamental persistent object on a stage. It has:
+
+- A path (unique within the stage)
+- A type name (schema, e.g., “Xform”, “Mesh”, “Material”)
+- Properties (attributes and relationships)
+- Metadata (documentation, assetInfo, custom data, model kind, etc.)
+- Children
+
+Create or define a prim:
+
+```python
+world = stage.DefinePrim("/World", "Xform")
+print(world.GetTypeName())  # "Xform"
+print(world.GetPath())      # /World
+```
+
+`DefinePrim` creates the prim if it does not exist and returns it. It also ensures the type is set.
+
+You can also get an existing prim without defining:
+
+```python
+prim = stage.GetPrimAtPath("/World")
+if prim:
+    print(prim)
+```
+
+Key prim methods and properties:
+- `GetTypeName()`, `SetTypeName()`
+- `GetChildren()`, `GetAllChildren()`
+- `GetProperties()`, `GetAttributes()`, `GetRelationships()`
+- `GetMetadata()`, `SetMetadata()`
+- `IsValid()`, `IsActive()`, `IsDefined()`
+
+Prims support metadata such as `documentation`, `assetInfo`, `customData`, and `kind` (model kind).
+
+**Common pattern**: Define an Xform at the root, then define child prims for geometry or groups. Use meaningful paths and types.
+
+### Attributes and Relationships (Properties)
+Properties live on prims. There are two kinds:
+
+**Attributes** hold typed data values. Examples: `radius` (float), `points` (VtArrayVec3f), `displayColor` (VtArrayVec3f), `xformOp:transform` (matrix).
+
+Create and set an attribute:
+
+```python
+radius_attr = world.CreateAttribute("radius", Sdf.ValueTypeNames.Float)
+radius_attr.Set(5.0)
+```
+
+Or use schema APIs for safety:
+
+```python
+from pxr import UsdGeom
+mesh = UsdGeom.Mesh.Define(stage, "/World/MyMesh")
+mesh.CreateRadiusAttr(1.0)  # typed and validated
+```
+
+Attributes support:
+- Single values
+- Time samples for animation: `attr.Set(value, time)`
+- Value resolution (strongest opinion wins — covered deeply in composition modules)
+- Interpolation modes (for some types)
+
+**Relationships** connect prims or properties. Example: material binding or skeleton joints.
+
+```python
+rel = prim.CreateRelationship("material:binding")
+rel.AddTarget("/World/Materials/Red")
+```
+
+**Inspecting properties**:
+
+```python
+for attr in prim.GetAttributes():
+    print(attr.GetName(), attr.GetTypeName())
+```
+
+Value types are strict (float, double, token, string, matrix4d, VtArray<...>, etc.). Use `Sdf.ValueTypeNames` constants.
+
+**Time-varying data intro**: Many attributes support time samples. Set different values at different times; USD handles interpolation. This is foundational for animation.
+
+### File Formats and Layers (Brief but Important)
+USD supports:
+- `.usda` — human-readable ASCII (great for inspection and source control)
+- `.usdc` — binary Crate format (compact, fast)
+- `.usd` — crate by default, can be either
+
+Choose based on workflow: `.usda` for readability and diffing, `.usdc` for large binary data or performance.
+
+Layers are the persistent storage. The stage composes a stack of layers. You will learn sublayers, references, and payloads in later modules, but remember every stage starts with its root layer.
+
+### Introspection and Tools
+Use Python to explore:
+
+```python
+stage = Usd.Stage.Open("scene.usd")
+print(stage.GetRootLayer().identifier)
+for prim in stage.Traverse():
+    print(prim.GetPath(), prim.GetTypeName())
+```
+
+**usdview** is your best friend for visual debugging. Open any USD file or stage in usdview. It shows the scenegraph tree, layer stack, prim stack, resolved attributes, and composition arcs. Use it constantly while learning.
+
+Other CLI tools: usdcat (print layer), usddiff, usdtree.
+
+### Practical Exercises for Module 1
+1. Create a new stage, define `/World` as Xform, add a child Mesh with points and a radius attribute. Save and open in usdview.
+2. Create an in-memory stage, build a small hierarchy, export it.
+3. Open an existing asset, inspect its prims and attributes with Python, then add a custom attribute and save.
+4. Traverse the entire scenegraph and print every prim path and type.
+5. Experiment with time samples on a simple attribute.
+
+Run these repeatedly until the API feels natural.
+
+### Common Pitfalls
+- Forgetting to check `prim.IsValid()`
+- Using wrong value types or mixing attribute/relationship APIs
+- Assuming paths are case-sensitive in certain contexts or forgetting namespace rules
+- Editing the wrong layer (always understand which layer receives your opinions)
+- Creating deep hierarchies without considering traversal cost later
+
+### Exam Relevance for Module 1
+Module 1 concepts appear across the blueprint, especially Data Modeling (13%) and Debugging (11%). You must:
+- Distinguish stage vs layer vs prim
+- Know how to create/open/save stages
+- Navigate prim hierarchies and inspect attributes
+- Understand basic property authoring and value types
+
+Later modules build directly on this: composition operates on prims and attributes, visualization uses UsdGeom schemas on prims, etc.
+
+### Key Takeaways – Module 1
+- A stage presents the composed scenegraph.
+- Prims form the hierarchy; use clear paths and types.
+- Attributes store typed data; relationships connect elements.
+- CreateNew / Open / CreateInMemory cover most creation needs.
+- usdview + Python introspection are essential daily tools.
+- Everything is data and non-destructive by design.
+
+You now have a rock-solid foundation in stages, scenegraphs, prims, and attributes. Practice the code examples until they are second nature.
+
+Next we will move to Module 2: Scene Description Blueprints (schemas). Review this module, run the exercises, then reply when you are ready for the next deep dive.
+
+You are building real expertise. Keep going.
 
 End of audio course. Good luck.
